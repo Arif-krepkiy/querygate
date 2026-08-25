@@ -129,6 +129,7 @@ def _parse_semantic_manifest(data: dict | None) -> list[Metric]:
                     model=model,
                     expr=expr,
                     filter=_clean_filter(m),
+                    certified=bool((m.get("meta") or {}).get("certified", False)),
                 )
             )
         return metrics

@@ -1,0 +1,185 @@
+# QueryGate default values.
+#
+# Everything the server reads is an environment variable (see .env.example), so
+# this chart is mostly a typed front-end for a ConfigMap plus a Secret. Two
+# settings are not free-form and the chart enforces them:
+#
+#   * more than one replica requires Redis, because the rate limiter and the
+#     result cache are per-process otherwise, and N replicas would silently mean
+#     N times the configured limit;
+#   * secrets never go in `env`; they come from an existing Secret you create
+#     out of band (or your external-secrets operator does).
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/Arif-krepkiy/querygate
+  tag: ""          # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  # For BigQuery on GKE, bind a Google service account here and never mount a
+  # key file: annotations.iam.gke.io/gcp-service-account: querygate@PROJECT.iam.gserviceaccount.com
+  annotations: {}
+
+service:
+  type: ClusterIP
+  port: 8765
+
+# The image already runs as uid 1001 and needs nothing writable.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  fsGroup: 1001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    # No CPU limit by default: throttling a request-latency service hurts more
+    # than it protects. Memory is capped because the catalog index is resident.
+    memory: 1Gi
+
+# Readiness fails immediately on SIGTERM (the server keeps serving in-flight
+# work), so give the platform time to take the pod out of rotation before the
+# container is killed.
+terminationGracePeriodSeconds: 45
+
+probes:
+  # Liveness must not depend on the catalog: a warming pod is not a broken one.
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 10
+    periodSeconds: 20
+  # Readiness does, because a pod without a catalog cannot answer anything.
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+  # Building the index on a large catalog can outlast a normal readiness budget.
+  startup:
+    enabled: true
+    path: /readyz
+    periodSeconds: 10
+    failureThreshold: 30
+
+podDisruptionBudget:
+  enabled: false      # turn on with replicaCount > 1
+  minAvailable: 1
+
+# Prometheus scraping. Set `serviceMonitor.enabled` if you run the operator.
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ── QueryGate configuration ───────────────────────────────────────────
+# Rendered into a ConfigMap as QG_* variables. Anything not listed here can be
+# added under `extraEnv`: the server reads env, so nothing needs a chart change.
+config:
+  env: production
+  warehouse: bigquery          # postgres | duckdb | bigquery | snowflake
+  allowedSchemas: analytics
+  tenantColumn: tenant_id
+
+  limits:
+    defaultRowLimit: 100
+    maxRowLimit: 1000
+    statementTimeoutMs: 15000
+    # Engine-specific unit: BigQuery bytes (a real price), Snowflake bytes the
+    # plan expects to touch, Postgres planner cost, DuckDB rows. Retune when you
+    # switch engines; the number is meaningless across them.
+    maxPlanCost: 107374182400
+    # Refuse a query that reads a partitioned table without narrowing the
+    # partition column. On a cloud warehouse this is a bill, not a slow query.
+    requirePartitionFilter: true
+
+  bigquery:
+    project: ""
+    location: ""
+    maxBytesBilled: 107374182400   # 100 GiB; BigQuery kills the job past this
+
+  snowflake:
+    account: ""
+    user: ""
+    role: ""            # grant SELECT only; this is what makes it read-only
+    warehouse: ""
+    database: ""
+    schema: ""
+    authenticator: ""
+
+  catalog:
+    s3Uri: ""           # s3://bucket/prefix, published by CI and not hand-edited
+    refreshTtlSeconds: 900
+
+  auth:
+    provider: oidc      # static (demo only) | oidc
+    oidcIssuer: ""
+    oidcAudience: ""
+    tenantClaim: tenant_ids
+    rolesClaim: realm_access.roles
+
+  masking:
+    enabled: true
+    unmaskRole: pii_reader
+
+  # Accountability, not access: these roles may only read metrics the data team
+  # certified. Intended for audiences who will quote the number as official.
+  certifiedOnlyRoles: ""
+
+  rateLimit:
+    rpm: 120
+    burst: 20
+    scope: principal
+    failOpen: true
+
+  observability:
+    tracingEnabled: false
+    otlpEndpoint: ""
+
+# Shared state. Required when replicaCount > 1. See the note at the top.
+redis:
+  url: ""               # redis://host:6379/0
+  cacheTtlSeconds: 300
+
+# Values that must not be in a ConfigMap. Create the Secret yourself; the chart
+# only references its keys.
+existingSecret:
+  name: ""              # e.g. querygate-secrets
+  keys:
+    snowflakePassword: QG_SF_PASSWORD
+    pgDsn: QG_PG_DSN
+    redisUrl: QG_REDIS_URL
+
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []

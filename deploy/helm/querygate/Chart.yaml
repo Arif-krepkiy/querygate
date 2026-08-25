@@ -1,0 +1,14 @@
+apiVersion: v2
+name: querygate
+description: Governed text-to-SQL MCP server. The agent writes the SQL, QueryGate decides what it may see.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/Arif-krepkiy/querygate
+sources:
+  - https://github.com/Arif-krepkiy/querygate
+keywords:
+  - mcp
+  - text-to-sql
+  - data-governance
+  - row-level-security

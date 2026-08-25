@@ -1,0 +1,60 @@
+{{- include "querygate.validate" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "querygate.fullname" . }}
+  labels:
+    {{- include "querygate.labels" . | nindent 4 }}
+data:
+  QG_ENV: {{ .Values.config.env | quote }}
+  QG_HOST: "0.0.0.0"
+  QG_PORT: {{ .Values.service.port | quote }}
+
+  QG_WAREHOUSE: {{ .Values.config.warehouse | quote }}
+  QG_ALLOWED_SCHEMAS: {{ .Values.config.allowedSchemas | quote }}
+  QG_TENANT_COLUMN: {{ .Values.config.tenantColumn | quote }}
+
+  QG_DEFAULT_ROW_LIMIT: {{ .Values.config.limits.defaultRowLimit | quote }}
+  QG_MAX_ROW_LIMIT: {{ .Values.config.limits.maxRowLimit | quote }}
+  QG_STATEMENT_TIMEOUT_MS: {{ .Values.config.limits.statementTimeoutMs | quote }}
+  QG_MAX_PLAN_COST: {{ .Values.config.limits.maxPlanCost | quote }}
+  QG_REQUIRE_PARTITION_FILTER: {{ .Values.config.limits.requirePartitionFilter | quote }}
+
+  {{- if eq .Values.config.warehouse "bigquery" }}
+  QG_BQ_PROJECT: {{ .Values.config.bigquery.project | quote }}
+  QG_BQ_LOCATION: {{ .Values.config.bigquery.location | quote }}
+  QG_BQ_MAX_BYTES_BILLED: {{ .Values.config.bigquery.maxBytesBilled | quote }}
+  {{- end }}
+
+  {{- if eq .Values.config.warehouse "snowflake" }}
+  QG_SF_ACCOUNT: {{ .Values.config.snowflake.account | quote }}
+  QG_SF_USER: {{ .Values.config.snowflake.user | quote }}
+  QG_SF_ROLE: {{ .Values.config.snowflake.role | quote }}
+  QG_SF_WAREHOUSE: {{ .Values.config.snowflake.warehouse | quote }}
+  QG_SF_DATABASE: {{ .Values.config.snowflake.database | quote }}
+  QG_SF_SCHEMA: {{ .Values.config.snowflake.schema | quote }}
+  QG_SF_AUTHENTICATOR: {{ .Values.config.snowflake.authenticator | quote }}
+  {{- end }}
+
+  QG_CATALOG_S3_URI: {{ .Values.config.catalog.s3Uri | quote }}
+  QG_CATALOG_REFRESH_TTL_SECONDS: {{ .Values.config.catalog.refreshTtlSeconds | quote }}
+
+  QG_AUTH_PROVIDER: {{ .Values.config.auth.provider | quote }}
+  QG_OIDC_ISSUER: {{ .Values.config.auth.oidcIssuer | quote }}
+  QG_OIDC_AUDIENCE: {{ .Values.config.auth.oidcAudience | quote }}
+  QG_OIDC_TENANT_CLAIM: {{ .Values.config.auth.tenantClaim | quote }}
+  QG_OIDC_ROLES_CLAIM: {{ .Values.config.auth.rolesClaim | quote }}
+
+  QG_MASKING_ENABLED: {{ .Values.config.masking.enabled | quote }}
+  QG_PII_UNMASK_ROLE: {{ .Values.config.masking.unmaskRole | quote }}
+  QG_CERTIFIED_ONLY_ROLES: {{ .Values.config.certifiedOnlyRoles | quote }}
+
+  QG_RATE_LIMIT_RPM: {{ .Values.config.rateLimit.rpm | quote }}
+  QG_RATE_LIMIT_BURST: {{ .Values.config.rateLimit.burst | quote }}
+  QG_RATE_LIMIT_SCOPE: {{ .Values.config.rateLimit.scope | quote }}
+  QG_RATE_LIMIT_FAIL_OPEN: {{ .Values.config.rateLimit.failOpen | quote }}
+
+  QG_CACHE_TTL_SECONDS: {{ .Values.redis.cacheTtlSeconds | quote }}
+  QG_METRICS_ENABLED: {{ .Values.metrics.enabled | quote }}
+  QG_TRACING_ENABLED: {{ .Values.config.observability.tracingEnabled | quote }}
+  QG_OTLP_ENDPOINT: {{ .Values.config.observability.otlpEndpoint | quote }}

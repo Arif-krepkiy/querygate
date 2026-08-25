@@ -23,6 +23,11 @@ embeddings = ["fastembed>=0.3", "numpy>=1.26"]
 # Qdrant needs no ONNX runtime.
 qdrant = ["qdrant-client>=1.7", "numpy>=1.26"]
 redis = ["redis>=5.0"]
+# Cloud warehouses. Each one's tenant-predicate rewrite is tested without the
+# driver installed, so bare-install still covers the security logic; only the
+# thin client call needs the extra.
+bigquery = ["google-cloud-bigquery>=3.25"]
+snowflake = ["snowflake-connector-python>=3.12"]
 duckdb = [
     "duckdb>=1.5.5",
 ]

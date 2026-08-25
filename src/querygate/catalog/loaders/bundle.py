@@ -31,6 +31,7 @@ def _parse_metric(raw: dict) -> Metric:
         model=raw["model"],
         expr=raw["expr"],
         filter=raw.get("filter", ""),
+        certified=bool(raw.get("certified", False)),
     )
 
 

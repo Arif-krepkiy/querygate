@@ -17,6 +17,7 @@ class AppState:
         self.catalog_loaded_at: float = 0.0
         self.build_lock = threading.Lock()
         self.build_in_flight = False
+        self.shutting_down = False
 
 
 state = AppState()

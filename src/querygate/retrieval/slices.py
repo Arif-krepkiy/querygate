@@ -25,6 +25,7 @@ def metric_summary(metric: Metric) -> dict[str, object]:
         "model": metric.model,
         "expr": metric.expr,
         "filter": metric.filter,
+        "certified": metric.certified,
     }
 
 

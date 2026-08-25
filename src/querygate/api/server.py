@@ -13,6 +13,7 @@ from querygate.auth.factory import create_verifier
 from querygate.catalog.sync import ensure_warm, is_ready
 from querygate.log_setup import get_logger
 from querygate.obs import metrics as qg_metrics
+from querygate.state import state
 
 _log = get_logger("querygate.api")
 
@@ -67,6 +68,8 @@ def _register_health(mcp: FastMCP) -> None:
 
     @mcp.custom_route("/readyz", methods=["GET"])
     async def _readyz(_req: Request) -> Response:
+        if state.shutting_down:
+            return JSONResponse({"status": "draining"}, status_code=503)
         ensure_warm()
         if is_ready():
             return JSONResponse({"status": "ready"})

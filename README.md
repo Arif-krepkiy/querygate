@@ -60,9 +60,11 @@ it safe is the actual work:
 | **Human-owned metrics** | dbt MetricFlow definitions are handed to the agent as authoritative, so a business term means one thing for everyone. |
 | **Context engineering** | Declared joins, data profiling, pagination, so the agent stops guessing. |
 | **Refusals that teach** | Every rejection names the near miss: the column you meant, or the table it actually lives on, with the join keys. |
-| **Engine-agnostic** | Postgres and DuckDB ship; BigQuery/Snowflake/Trino are one module each. |
+| **Engine-agnostic** | Postgres, DuckDB, BigQuery and Snowflake ship; Trino is one module more. |
 | **Pluggable auth** | OIDC/Keycloak with strict JWT validation, or static tokens for the demo. |
 | **Observability** | OTel spans + Prometheus metrics, with SQL and tenant IDs redacted by default. |
+| **Warehouse-enforced mode** | Or delegate row security to the engine, so the query runs as the caller's own warehouse role. [Design notes](docs/warehouse-enforced-governance.md). |
+| **Certified-only callers** | A role that may read signed-off metrics and nothing else: no ad-hoc SQL, no uncertified number. |
 
 ## Try it
 
@@ -624,9 +626,19 @@ Then one line in [`warehouse/__init__.py`](src/querygate/warehouse/__init__.py):
 _ADAPTERS = {
     "postgres": "querygate.warehouse.postgres",
     "duckdb": "querygate.warehouse.duckdb_backend",
+    "bigquery": "querygate.warehouse.bigquery",
+    "snowflake": "querygate.warehouse.snowflake",
     "clickhouse": "querygate.warehouse.clickhouse",   # ← yours
 }
 ```
+
+One thing the cloud adapters had to add: the canonical predicate
+`col = ANY(:param)` is Postgres syntax. BigQuery wants `IN UNNEST(@param)` and
+Snowflake wants `ARRAY_CONTAINS(col::VARIANT, PARSE_JSON(:param))`, so
+[`tenant_sql.py`](src/querygate/warehouse/tenant_sql.py) rewrites it at the last
+hop and then re-proves its own output: the engine-form predicate count must
+equal the canonical count it replaced, and no canonical form may survive. A
+rewrite that dropped a predicate fails closed instead of running ungoverned.
 
 Set `QG_WAREHOUSE=clickhouse` (and `QG_SQL_DIALECT` if the engine's sqlglot
 dialect name differs). Nothing else changes: the pipeline, governance,
@@ -664,6 +676,11 @@ questions with ground-truth answers computed from deterministic seeds.
 Retrieval quality (hit@k) is offline and CI-friendly; answer quality is checked
 by running an agent and comparing to recorded numbers. See
 [`evals/questions.json`](evals/questions.json).
+
+**Kubernetes.** There is a chart in
+[`deploy/helm/querygate`](deploy/helm/querygate). It wires the configuration as
+env, rolls pods when the ConfigMap changes, and fails readiness on SIGTERM so
+the load balancer drains the pod before the process goes away.
 
 ## Known limitations
 

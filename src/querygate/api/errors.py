@@ -7,7 +7,9 @@ from typing import ParamSpec
 
 from querygate.catalog.models import CatalogError
 from querygate.catalog.sync import CatalogNotReadyError
+from querygate.query.certification import CertificationError
 from querygate.query.governance import GovernanceError
+from querygate.query.identity import IdentityError
 from querygate.query.masking import MaskingError
 from querygate.query.validation import GroundingError
 from querygate.ratelimit import RateLimitError
@@ -39,6 +41,10 @@ def with_tool_errors(func: Callable[_P, Awaitable[str]]) -> Callable[_P, Awaitab
             return error_json(str(exc), kind="warming")
         except GovernanceError as exc:
             return error_json(str(exc), kind="governance")
+        except IdentityError as exc:
+            return error_json(str(exc), kind="identity")
+        except CertificationError as exc:
+            return error_json(str(exc), kind="certification")
         except MaskingError as exc:
             return error_json(str(exc), kind="masking")
         except GroundingError as exc:

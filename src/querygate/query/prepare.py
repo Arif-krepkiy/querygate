@@ -13,6 +13,7 @@ from querygate.query.governance import (
     inject_tenant_filter,
 )
 from querygate.query.guardrails import assert_guardrails
+from querygate.query.identity import warehouse_enforced
 from querygate.query.limits import apply_offset, clamp_row_limit, enforce_row_limit
 from querygate.query.masking import apply_masking, assert_masking_applied
 from querygate.query.qualify import qualify_tables
@@ -35,6 +36,8 @@ class PreparedQuery:
     tables: tuple[str, ...]
     scalar_params: tuple[tuple[str, str], ...] = ()
     offset: int = 0
+    # Set at the warehouse seam in warehouse-enforced mode; None in inject mode.
+    warehouse_role: str | None = None
 
     def bind_params(self) -> dict[str, object]:
         """Named parameters for the driver: only those the SQL actually uses.
@@ -76,7 +79,10 @@ def _pipeline(
         recorder.record("guard", "Shape checked: no unconditioned join, no unpruned partition.", sql)
     row_limit = clamp_row_limit(limit)
 
-    if _touches_governed(handles) and not tenant_scopes:
+    # In warehouse mode tenant scopes are meaningless: the engine's grants decide,
+    # so an empty scope set is normal rather than a refusal.
+    enforced_here = not warehouse_enforced()
+    if enforced_here and _touches_governed(handles) and not tenant_scopes:
         msg = (
             "Governance violation: the query reads governed tables but the caller has no permitted "
             "tenant scopes. Refusing to execute (fail-closed)."
@@ -93,9 +99,19 @@ def _pipeline(
     # (on the tenant column, which is never masked) is added to final SQL.
     masked = paged if unmask else apply_masking(paged, catalog, handles)
     recorder.record("mask", "Columns the catalog marks as PII wrapped in their mask.", masked)
-    governed = inject_tenant_filter(masked, catalog)
-    recorder.record("govern", "Tenant predicate injected into every governed scope.", governed)
-    assert_tenant_filter_present(governed, catalog)
+    if enforced_here:
+        governed = inject_tenant_filter(masked, catalog)
+        recorder.record("govern", "Tenant predicate injected into every governed scope.", governed)
+        assert_tenant_filter_present(governed, catalog)
+    else:
+        # Recorded explicitly: a trace that showed nothing here would be
+        # indistinguishable from governance silently doing nothing.
+        governed = masked
+        recorder.record(
+            "govern",
+            "Skipped: row security is enforced by the warehouse; this query runs as the caller's role.",
+            governed,
+        )
     if not unmask:
         assert_masking_applied(governed, catalog, handles)
     recorder.record(

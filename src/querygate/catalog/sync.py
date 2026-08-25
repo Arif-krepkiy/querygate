@@ -9,6 +9,7 @@ from querygate import config
 from querygate.catalog.loaders import bundle, dbt
 from querygate.catalog.models import CatalogError, SemanticCatalog
 from querygate.log_setup import get_logger
+from querygate.obs import metrics
 from querygate.retrieval.index import CatalogIndex
 from querygate.state import state
 
@@ -43,6 +44,7 @@ def _build() -> None:
     state.catalog = catalog
     state.index = index
     state.catalog_loaded_at = time.time()
+    metrics.record_catalog(len(catalog.models), state.catalog_loaded_at)
     _log.info("catalog ready: %d models (build=%s)", len(catalog.models), catalog.build.get("git_sha", "?"))
 
 

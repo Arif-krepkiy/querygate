@@ -55,6 +55,9 @@ class Metric:
     model: str  # the CatalogModel this metric is computed on
     expr: str  # the aggregation in business terms, e.g. "sum(amount)"
     filter: str = ""  # optional condition, e.g. "status = 'completed'"
+    # Set by the data team in dbt meta. QueryGate never sets it and the agent
+    # cannot claim it. See query/certification.py.
+    certified: bool = False
 
 
 @dataclass(frozen=True)

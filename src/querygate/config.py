@@ -15,6 +15,17 @@ def _env_int(name: str, default: int) -> int:
     return int(raw) if raw else default
 
 
+def _env_map(name: str, default: str) -> dict[str, str]:
+    """Parse "key=value,key2=value2" into a dict, skipping malformed entries."""
+    raw = os.environ.get(name) or default
+    mapping: dict[str, str] = {}
+    for item in raw.split(","):
+        key, _, value = item.strip().partition("=")
+        if key.strip() and value.strip():
+            mapping[key.strip()] = value.strip()
+    return mapping
+
+
 def _env_list(name: str, default: str) -> tuple[str, ...]:
     raw = os.environ.get(name) or default
     return tuple(item.strip() for item in raw.split(",") if item.strip())
@@ -62,6 +73,13 @@ MAX_SEARCH_LENGTH: int = _env_int("QG_MAX_SEARCH_LENGTH", 200)
 # ── Warehouse ─────────────────────────────────────────────────────────
 # Which engine adapter to load. Adding one means writing a module under
 # warehouse/ and listing it here. The query pipeline is engine-agnostic.
+# Who applies row security: this server (inject) or the engine's own grants
+# and policies (warehouse). See docs/warehouse-enforced-governance.md.
+GOVERNANCE_MODE: str = os.environ.get("QG_GOVERNANCE_MODE", "inject").strip().lower()
+# IdP role -> warehouse role, an explicit allowlist. Never the token's role claim
+# passed through: that is attacker-influenced input.
+WAREHOUSE_ROLE_MAP: dict[str, str] = _env_map("QG_WAREHOUSE_ROLE_MAP", "")
+
 WAREHOUSE: str = os.environ.get("QG_WAREHOUSE", "postgres").strip().lower()
 
 # sqlglot dialect used to parse / transform / render every query. Defaults to
@@ -81,6 +99,22 @@ STATEMENT_TIMEOUT_MS: int = _env_int("QG_STATEMENT_TIMEOUT_MS", 15000)
 MAX_PLAN_COST: float = float(os.environ.get("QG_MAX_PLAN_COST") or 0)
 
 # Schemas a query may read. Tables anywhere else are rejected at validation.
+BQ_PROJECT: str = os.environ.get("QG_BQ_PROJECT", "").strip()
+BQ_LOCATION: str = os.environ.get("QG_BQ_LOCATION", "").strip()
+# Hard byte ceiling BigQuery itself enforces, on top of the plan-cost gate.
+BQ_MAX_BYTES_BILLED: int = _env_int("QG_BQ_MAX_BYTES_BILLED", 0)
+
+SF_ACCOUNT: str = os.environ.get("QG_SF_ACCOUNT", "").strip()
+SF_USER: str = os.environ.get("QG_SF_USER", "").strip()
+SF_PASSWORD: str = os.environ.get("QG_SF_PASSWORD", "")
+SF_AUTHENTICATOR: str = os.environ.get("QG_SF_AUTHENTICATOR", "").strip()
+# Service role used in inject mode. In warehouse mode the caller's mapped role
+# replaces it per query.
+SF_ROLE: str = os.environ.get("QG_SF_ROLE", "").strip()
+SF_WAREHOUSE: str = os.environ.get("QG_SF_WAREHOUSE", "").strip()
+SF_DATABASE: str = os.environ.get("QG_SF_DATABASE", "").strip()
+SF_SCHEMA: str = os.environ.get("QG_SF_SCHEMA", "").strip()
+
 ALLOWED_SCHEMAS: tuple[str, ...] = _env_list("QG_ALLOWED_SCHEMAS", "analytics")
 
 # Column that scopes governed tables to a tenant. Tables without it are public.
@@ -99,6 +133,10 @@ MASKING_ENABLED: bool = _env_bool("QG_MASKING_ENABLED", default=True)
 # A principal holding this role reads masked columns in the clear. Empty means
 # nobody does, which is the safer default for a shared deployment.
 PII_UNMASK_ROLE: str = os.environ.get("QG_PII_UNMASK_ROLE", "pii_reader")
+
+# Roles that may read certified metrics and nothing else: no ad-hoc SQL, no
+# uncertified metric. Orthogonal to row security. See query/certification.py.
+CERTIFIED_ONLY_ROLES: tuple[str, ...] = _env_list("QG_CERTIFIED_ONLY_ROLES", "")
 
 # ── Catalog source (precedence: S3 → dbt target dir → bundled sample) ─
 CATALOG_S3_URI: str | None = os.environ.get("QG_CATALOG_S3_URI") or None

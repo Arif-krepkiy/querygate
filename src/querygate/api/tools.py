@@ -13,7 +13,7 @@ from querygate.auth.context import current_principal, current_tenant_scopes, ens
 from querygate.cache import CacheKey, get_cache
 from querygate.catalog.suggest import table_hint
 from querygate.catalog.sync import get_catalog, get_index, request_reload
-from querygate.obs import current_span, observed, set_query_attributes
+from querygate.obs import current_span, metrics, observed, set_query_attributes
 from querygate.query import cursor as cursor_codec
 from querygate.query.metrics import build_metric_query, resolve_metric
 from querygate.query.prepare import PreparedQuery, prepare_filter_values_query, prepare_query
@@ -32,7 +32,9 @@ _READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempoten
 async def _cost_check(prepared: PreparedQuery) -> float | None:
     """EXPLAIN and refuse above the plan-cost ceiling (0 disables)."""
     estimate = await warehouse.estimate(prepared)
-    if config.MAX_PLAN_COST and estimate.plan_cost > config.MAX_PLAN_COST:
+    refused = bool(config.MAX_PLAN_COST and estimate.plan_cost > config.MAX_PLAN_COST)
+    metrics.record_cost(config.WAREHOUSE, estimate.plan_cost, refused=refused)
+    if refused:
         msg = (
             f"Query plan cost ~{estimate.plan_cost:,.0f} exceeds the configured ceiling. "
             f"Add a filter (often a date column) or select fewer columns."
@@ -267,6 +269,7 @@ async def qg_get_metric(
         "label": definition.label,
         "definition": definition.expr,
         "filter": definition.filter,
+        "certified": definition.certified,
     }
     return compact_json(payload)
 

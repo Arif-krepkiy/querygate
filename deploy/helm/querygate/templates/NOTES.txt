@@ -1,0 +1,46 @@
+QueryGate {{ .Chart.AppVersion }} installed as {{ include "querygate.fullname" . }}.
+
+  Warehouse : {{ .Values.config.warehouse }}
+  Auth      : {{ .Values.config.auth.provider }}
+  Replicas  : {{ if .Values.autoscaling.enabled }}{{ .Values.autoscaling.minReplicas }}–{{ .Values.autoscaling.maxReplicas }} (HPA){{ else }}{{ .Values.replicaCount }}{{ end }}
+
+Check it is serving:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "querygate.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  curl localhost:{{ .Values.service.port }}/readyz
+
+`/readyz` reports "warming" until the catalog is loaded and the retrieval index
+is built. That is expected on a cold start, and the startup probe allows for it.
+
+Before you point an agent at this, confirm the three things that decide whether
+answers are right, not just governed:
+
+  1. The catalog is the current one.
+     kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "querygate.fullname" . }} | grep "catalog ready"
+     Watch querygate_catalog_models and querygate_catalog_synced_timestamp_seconds:
+     a catalog that silently shrinks degrades every answer before anything errors.
+
+  2. The models and metrics are documented. Retrieval and metric compilation can
+     only be as good as the descriptions your team wrote; an undocumented mart
+     produces confident, wrong answers.
+{{- if .Values.config.certifiedOnlyRoles }}
+
+  3. Certified-only roles are set to: {{ .Values.config.certifiedOnlyRoles }}
+     Those principals can read certified metrics and nothing else. Make sure the
+     metrics they need actually carry meta.certified in dbt, or they will be
+     refused everything.
+{{- else }}
+
+  3. config.certifiedOnlyRoles is empty: every caller may write ad-hoc SQL, and
+     no answer is marked as an agreed figure. Set it before exposing this to an
+     audience that will quote the numbers as official.
+{{- end }}
+{{- if and (eq .Values.config.limits.maxPlanCost 0.0) (eq .Values.config.warehouse "bigquery") }}
+
+WARNING: maxPlanCost is 0 on BigQuery. The dry-run cost gate is disabled and a
+single unfiltered query can scan (and bill) the whole table.
+{{- end }}
+{{- if eq .Values.config.auth.provider "static" }}
+
+WARNING: static auth is the demo verifier with fixed tokens. Do not expose this.
+{{- end }}
