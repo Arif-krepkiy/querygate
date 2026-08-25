@@ -10,12 +10,16 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
-# Install dependencies first (cached layer), then the package.
-COPY pyproject.toml README.md ./
+# Install dependencies first (cached layer), then the package. The lockfile has
+# to come along or `uv sync` resolves fresh and the image drifts off the
+# versions the tests ran against.
+COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 # `s3` for bucket catalog sync, `redis` for the shared rate limiter, `otel` for
 # /metrics and spans; add `embeddings` here to bake the hybrid-search model in.
-RUN uv sync --extra s3 --extra redis --extra otel --no-dev
+RUN uv sync --frozen --extra s3 --extra redis --extra otel --no-dev
 
 EXPOSE 8765
-ENTRYPOINT ["uv", "run", "querygate"]
+# Run the console script straight from the venv. `uv run` would re-sync on
+# every start and pull the dev group into a production container.
+ENTRYPOINT ["/app/.venv/bin/querygate"]

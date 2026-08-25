@@ -1477,7 +1477,7 @@ requires-dist = [
     { name = "duckdb", marker = "extra == 'duckdb'", specifier = ">=1.5.5" },
     { name = "fastembed", marker = "extra == 'embeddings'", specifier = ">=0.3" },
     { name = "httpx", marker = "extra == 'oidc'", specifier = ">=0.28.1" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.10" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.10,<2" },
     { name = "numpy", marker = "extra == 'embeddings'", specifier = ">=1.26" },
     { name = "numpy", marker = "extra == 'qdrant'", specifier = ">=1.26" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'otel'", specifier = ">=1.27" },
