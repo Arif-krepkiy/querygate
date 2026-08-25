@@ -13,9 +13,9 @@ WORKDIR /app
 # Install dependencies first (cached layer), then the package.
 COPY pyproject.toml README.md ./
 COPY src ./src
-# `s3` for bucket catalog sync, `redis` for the shared rate limiter; add
-# `embeddings` here to bake the hybrid-search model into the image.
-RUN uv sync --extra s3 --extra redis --no-dev
+# `s3` for bucket catalog sync, `redis` for the shared rate limiter, `otel` for
+# /metrics and spans; add `embeddings` here to bake the hybrid-search model in.
+RUN uv sync --extra s3 --extra redis --extra otel --no-dev
 
 EXPOSE 8765
 ENTRYPOINT ["uv", "run", "querygate"]
