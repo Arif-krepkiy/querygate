@@ -39,13 +39,18 @@ services:
       - ./dbt:/usr/app
       - dbt_target:/usr/app/target
     working_dir: /usr/app
-    command: >
-      bash -c "dbt seed --profiles-dir . &&
-               dbt run --profiles-dir . &&
-               dbt docs generate --profiles-dir . &&
-               (dbt parse --profiles-dir . || echo 'dbt parse (semantic layer) skipped') &&
-               cp glossary.json target/glossary.json &&
-               echo 'dbt build complete'"
+    # The image's entrypoint is `dbt` itself, so the build script has to replace
+    # it rather than be passed as arguments. Single-element list, not a string:
+    # compose word-splits a string command and bash -c would get only the first.
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        dbt seed --profiles-dir . &&
+        dbt run --profiles-dir . &&
+        dbt docs generate --profiles-dir . &&
+        (dbt parse --profiles-dir . || echo 'dbt parse (semantic layer) skipped') &&
+        cp glossary.json target/glossary.json &&
+        echo 'dbt build complete'
 
   # Shared rate-limiter store. With it, every replica draws from one token
   # bucket; without it each process would enforce the limit on its own.
