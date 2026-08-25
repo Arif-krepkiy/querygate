@@ -95,6 +95,93 @@ SELECT CURRENT_ROLE(), CURRENT_SECONDARY_ROLES();
 SHOW PARAMETERS LIKE 'DEFAULT_SECONDARY_ROLES' FOR USER QUERYGATE_SVC;
 ```
 
+## The one-service-user problem
+
+The scenario this was built for, stated plainly: a mid-sized company has exactly
+one technical Snowflake user. Everything connects through it. If that user holds
+`SELECT` on the whole warehouse, then the moment an agent sits in front of it,
+an analyst on team A can read team B's tables by asking nicely. Nothing in the
+warehouse objects, because as far as Snowflake is concerned every query is the
+same, fully-privileged principal.
+
+Role mapping fixes the **query**. It does not fix the **credential**, and it is
+worth being precise about the difference, because the two get conflated and the
+gap between them is where an audit finding lives.
+
+**What is fixed.** A query arrives, the caller's IdP role maps to exactly one
+warehouse role, the session is pinned to it, and Snowflake's own grants decide
+what that query can read. Team A's analyst gets team A's views. There is no
+prompt that changes this, because the role is chosen from operator config before
+any SQL runs, and `CURRENT_ROLE()` is read back and compared afterwards.
+
+**What is not fixed.** The service user must be granted *every* mapped role for
+this to work at all. So the credential itself is a union principal: whoever holds
+those connection details holds the whole warehouse. The blast radius of a leaked
+secret, a misconfigured pod, or a second process reusing the same account is
+total. Role pinning is a control QueryGate applies at runtime; it is not a
+property of the account.
+
+That is an honest and often acceptable trade, the same posture as any application
+service account, but it should be a decision rather than an accident.
+
+### The ladder, cheapest first
+
+**1. One role per audience, mapped (implemented).** No Snowflake feature beyond
+grants. Works today. Residual risk: the union principal above. Right answer for
+most mid-sized shops, and the place to start.
+
+**2. One service user per audience.** N credential sets instead of one. Removes
+the union principal, since a leaked `QG_FINANCE_SVC` password exposes finance
+only, at the cost of managing N secrets and N connection configs. QueryGate would need
+per-audience connection settings rather than a single `QG_SF_*` block, which is
+a small change to the adapter and a larger one to how you run it. Worth it when
+the audiences differ in sensitivity rather than just in subject.
+
+**3. Row access policies instead of per-audience views.** Keeps one set of
+tables. The policy reads `CURRENT_ROLE()` and filters. Better than views when the
+audience grid is wide: twelve teams times four marts is forty-eight views to keep
+in sync, versus four tables with one policy each. Still relies on role pinning
+for its input, so it composes with step 1 rather than replacing it.
+
+**4. External OAuth, the caller's own identity.** The honest end state. The human
+authenticates to the IdP, QueryGate exchanges that token for a Snowflake one, and
+the query runs as *them*. No union principal exists at all. Native row access and
+masking policies apply unchanged, and the Snowflake audit log names a person
+rather than a service account, which is the thing a compliance reviewer actually
+asks for. Cost: an External OAuth security integration, token exchange in the
+server, and every analyst needs a Snowflake identity, which is precisely what a
+company with one technical user does not have. That last point is usually what
+decides it, and it is an org change more than an engineering one.
+
+### Where the sharp edge is
+
+Not in any of the above. It is in step 1 combined with `DEFAULT_SECONDARY_ROLES
+= ('ALL')`, covered in detail earlier on this page. That default silently
+un-does the entire mechanism while leaving every surface looking correct, and it
+is the specific reason `_pin_role` disables secondary roles and then verifies the
+result rather than trusting `USE ROLE`.
+
+Check it before anything else:
+
+```sql
+SHOW PARAMETERS LIKE 'DEFAULT_SECONDARY_ROLES' FOR USER QUERYGATE_SVC;
+```
+
+### What still has to be decided per deployment
+
+- Whether an analyst may hold two mapped roles. QueryGate refuses ambiguity
+  today, which is safe but means "finance analyst who also covers ops" needs a
+  third role granting both, created deliberately, rather than resolving to a
+  silent union.
+- Whether the catalog should hide models a role cannot read. Currently it does
+  not, so the agent will happily write valid SQL against a view it will then be
+  refused. Not a leak, but it burns turns. See the first item below.
+- What happens to `dbt docs` if the marts are not tenant-modelled. The catalog
+  still describes every model to every caller, so descriptions and column names
+  leak even when rows do not. For most shops table names are not sensitive; if
+  yours are, that is an argument for per-role catalog filtering rather than a
+  reason to avoid this mode.
+
 ## What is still missing
 
 **1. Catalog filtering by role.** Retrieval currently offers every model in the
