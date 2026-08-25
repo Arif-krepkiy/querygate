@@ -91,18 +91,66 @@ jobs:
       - name: Retrieval hit@k eval
         run: uv run python evals/eval_retrieval.py
 
-  docker:
+  # Building the image is not the same as running it. Everything below only
+  # fails once a container actually starts: an unpinned dependency, a wrong
+  # entrypoint, a missing extra.
+  demo-stack:
     runs-on: ubuntu-latest
     needs: [lint, bare-install, test]
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Build image
-        uses: docker/build-push-action@v6
+      - uses: astral-sh/setup-uv@v5
         with:
-          context: .
-          file: deploy/Dockerfile
-          push: false
-          tags: querygate:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          enable-cache: true
+
+      - name: Bring up the stack
+        run: docker compose up --build --detach
+
+      - name: Wait for the server
+        run: |
+          for _ in $(seq 1 120); do
+            if curl -sf localhost:8765/healthz >/dev/null; then exit 0; fi
+            sleep 5
+          done
+          echo "server never became healthy"
+          exit 1
+
+      - name: Health, readiness, auth, metrics
+        run: |
+          set -euo pipefail
+          test "$(curl -sf localhost:8765/healthz)" = '{"status":"ok"}'
+          test "$(curl -sf localhost:8765/readyz)" = '{"status":"ready"}'
+          code=$(curl -s -o /dev/null -w '%{http_code}' localhost:8765/mcp)
+          test "$code" = 401 || { echo "unauthenticated /mcp gave $code, want 401"; exit 1; }
+          curl -sf localhost:8765/metrics >/dev/null
+
+      - name: Catalog really came from dbt, not the bundled sample
+        run: |
+          docker compose exec -T querygate \
+            ls /dbt/target/manifest.json /dbt/target/catalog.json \
+               /dbt/target/semantic_manifest.json /dbt/target/glossary.json
+
+      - name: Tenant isolation holds end to end
+        run: |
+          set -euo pipefail
+          out=$(uv run python examples/isolation_demo.py)
+          echo "$out"
+          # The demo prints and always exits 0, so assert on what it printed.
+          grep -q 'equals tok_multi: True' <<<"$out"
+          grep -q '55,952.59' <<<"$out"
+          grep -q '62,841.34' <<<"$out"
+          grep -q '118,793.93' <<<"$out"
+          grep -q 'kind=grounding' <<<"$out"
+
+      - name: Tool calls were counted
+        run: |
+          curl -sf localhost:8765/metrics \
+            | grep -q '^querygate_tool_calls_total{outcome="ok",tool="run_query"}'
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
