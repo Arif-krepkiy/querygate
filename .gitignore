@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Local extras
+querygate-*.tar.gz
+.cursor/
+
+# Env
+.env
+
+# dbt
+dbt/target/
+dbt/.user.yml
+dbt/dbt_packages/
+dbt/logs/
+
+# Local retrieval traces
+*.jsonl
+
+# Scratch
+private/

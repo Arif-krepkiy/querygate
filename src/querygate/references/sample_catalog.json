@@ -1,0 +1,256 @@
+{
+  "build": {
+    "git_sha": "sample",
+    "generated_at": "bundled"
+  },
+  "metrics": [
+    {
+      "name": "completed_revenue",
+      "label": "Completed Revenue",
+      "description": "Total USD from completed orders only. The canonical revenue number \u2014 use this rather than summing amount yourself.",
+      "model": "customer_orders",
+      "expr": "sum(amount)",
+      "filter": "status = 'completed'"
+    },
+    {
+      "name": "total_orders",
+      "label": "Total Orders",
+      "description": "Count of all orders regardless of status.",
+      "model": "customer_orders",
+      "expr": "count(*)",
+      "filter": ""
+    },
+    {
+      "name": "active_customers",
+      "label": "Active Customers",
+      "description": "Distinct customers with an order in the last 90 days. 'Active' means is_active = true \u2014 do not redefine it per query.",
+      "model": "active_customers",
+      "expr": "count(distinct customer_id)",
+      "filter": "is_active"
+    }
+  ],
+  "glossary": {
+    "revenue": [
+      "sales",
+      "income",
+      "turnover",
+      "money",
+      "earnings",
+      "made"
+    ],
+    "churn": [
+      "attrition",
+      "cancelled",
+      "inactive",
+      "lost"
+    ],
+    "customer": [
+      "client",
+      "account",
+      "user"
+    ],
+    "plan": [
+      "subscription",
+      "tier",
+      "package"
+    ]
+  },
+  "models": [
+    {
+      "name": "customer_orders",
+      "schema": "analytics",
+      "table": "customer_orders",
+      "kind": "table",
+      "governed": true,
+      "tenant_column": "tenant_id",
+      "domain": "orders",
+      "description": "One row per order, enriched with customer, region, and subscription plan. The grain is a single order.",
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "integer",
+          "description": "Unique order identifier."
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "description": "Owning tenant (row-security scope)."
+        },
+        {
+          "name": "customer_id",
+          "type": "integer",
+          "description": "Customer who placed the order."
+        },
+        {
+          "name": "customer_name",
+          "type": "text",
+          "description": "Customer display name. PII \u2014 masked unless the caller holds pii_reader.",
+          "mask": "hash"
+        },
+        {
+          "name": "region",
+          "type": "text",
+          "description": "Customer region: NA, EU, APAC."
+        },
+        {
+          "name": "order_date",
+          "type": "date",
+          "description": "Date the order was placed."
+        },
+        {
+          "name": "amount",
+          "type": "numeric",
+          "description": "Order value in USD."
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "description": "Order status: completed, pending, refunded."
+        },
+        {
+          "name": "plan_name",
+          "type": "text",
+          "description": "Subscription plan the customer is on."
+        }
+      ],
+      "joins": [
+        {
+          "to_model": "plan_catalog",
+          "from_column": "plan_name",
+          "to_column": "plan_name"
+        },
+        {
+          "to_model": "active_customers",
+          "from_column": "customer_id",
+          "to_column": "customer_id"
+        }
+      ],
+      "partition_column": "order_date"
+    },
+    {
+      "name": "monthly_revenue",
+      "schema": "analytics",
+      "table": "monthly_revenue",
+      "kind": "table",
+      "governed": true,
+      "tenant_column": "tenant_id",
+      "domain": "finance",
+      "description": "Revenue aggregated per tenant, month, and region. Only completed orders count toward revenue.",
+      "columns": [
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "description": "Owning tenant (row-security scope)."
+        },
+        {
+          "name": "month",
+          "type": "date",
+          "description": "First day of the calendar month."
+        },
+        {
+          "name": "region",
+          "type": "text",
+          "description": "Customer region: NA, EU, APAC."
+        },
+        {
+          "name": "revenue",
+          "type": "numeric",
+          "description": "Sum of completed order amounts (USD)."
+        },
+        {
+          "name": "order_count",
+          "type": "integer",
+          "description": "Number of completed orders."
+        }
+      ],
+      "partition_column": "month"
+    },
+    {
+      "name": "active_customers",
+      "schema": "analytics",
+      "table": "active_customers",
+      "kind": "table",
+      "governed": true,
+      "tenant_column": "tenant_id",
+      "domain": "product",
+      "description": "One row per customer with recency and an active flag (an order in the last 90 days). Use for retention and churn questions.",
+      "columns": [
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "description": "Owning tenant (row-security scope)."
+        },
+        {
+          "name": "customer_id",
+          "type": "integer",
+          "description": "Customer identifier."
+        },
+        {
+          "name": "customer_name",
+          "type": "text",
+          "description": "Customer display name. PII \u2014 masked unless the caller holds pii_reader.",
+          "mask": "hash"
+        },
+        {
+          "name": "region",
+          "type": "text",
+          "description": "Customer region: NA, EU, APAC."
+        },
+        {
+          "name": "plan_name",
+          "type": "text",
+          "description": "Current subscription plan."
+        },
+        {
+          "name": "last_order_date",
+          "type": "date",
+          "description": "Most recent order date."
+        },
+        {
+          "name": "is_active",
+          "type": "boolean",
+          "description": "True if the customer ordered in the last 90 days."
+        }
+      ],
+      "joins": [
+        {
+          "to_model": "plan_catalog",
+          "from_column": "plan_name",
+          "to_column": "plan_name"
+        }
+      ]
+    },
+    {
+      "name": "plan_catalog",
+      "schema": "analytics",
+      "table": "plan_catalog",
+      "kind": "table",
+      "governed": false,
+      "tenant_column": null,
+      "domain": "reference",
+      "description": "Public reference of subscription plans and pricing. Shared across all tenants \u2014 not row-secured.",
+      "columns": [
+        {
+          "name": "plan_id",
+          "type": "integer",
+          "description": "Plan identifier."
+        },
+        {
+          "name": "plan_name",
+          "type": "text",
+          "description": "Plan display name: Free, Pro, Enterprise."
+        },
+        {
+          "name": "monthly_price",
+          "type": "numeric",
+          "description": "List price per month in USD."
+        },
+        {
+          "name": "tier",
+          "type": "text",
+          "description": "Plan tier ranking."
+        }
+      ]
+    }
+  ]
+}

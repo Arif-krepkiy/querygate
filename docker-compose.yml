@@ -1,0 +1,117 @@
+# Demo stack: `docker compose up --build`.
+#
+# Healthchecks and depends_on give the order: postgres, then dbt (seed, run,
+# docs generate), then the server, which reads the dbt target. The server
+# listens on http://localhost:8765/mcp. Tokens are in the README.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: querygate
+      POSTGRES_PASSWORD: querygate
+      POSTGRES_DB: warehouse
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U querygate -d warehouse"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # One-shot: build the warehouse from seeds, then emit dbt docs (manifest +
+  # catalog) into the shared volume the server compiles its catalog from.
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.8.latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      QG_PG_HOST: postgres
+      QG_PG_PORT: "5432"
+      QG_PG_USER: querygate
+      QG_PG_PASSWORD: querygate
+      QG_PG_DBNAME: warehouse
+    volumes:
+      - ./dbt:/usr/app
+      - dbt_target:/usr/app/target
+    working_dir: /usr/app
+    command: >
+      bash -c "dbt seed --profiles-dir . &&
+               dbt run --profiles-dir . &&
+               dbt docs generate --profiles-dir . &&
+               (dbt parse --profiles-dir . || echo 'dbt parse (semantic layer) skipped') &&
+               cp glossary.json target/glossary.json &&
+               echo 'dbt build complete'"
+
+  # Shared rate-limiter store. With it, every replica draws from one token
+  # bucket; without it each process would enforce the limit on its own.
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --loglevel warning
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  querygate:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      dbt:
+        condition: service_completed_successfully
+    environment:
+      QG_PG_DSN: postgresql://querygate:querygate@postgres:5432/warehouse
+      QG_CATALOG_DBT_TARGET_PATH: /dbt/target
+      QG_ALLOWED_SCHEMAS: analytics
+      QG_MAX_PLAN_COST: "5000000"
+      # Rate limiting: 60 calls/min per caller, burst 10. run_query costs 5
+      # tokens, catalog lookups 1. See QG_RATE_LIMIT_COSTS in .env.example.
+      QG_REDIS_URL: redis://redis:6379/0
+      # Cache the (stable, frequently repeated) filter-value lookups.
+      QG_CACHE_TTL_SECONDS: "300"
+      QG_RATE_LIMIT_RPM: "60"
+      QG_RATE_LIMIT_BURST: "10"
+      QG_RATE_LIMIT_SCOPE: principal
+      # Two demo tenants. Present one of these as `Authorization: Bearer <token>`.
+      QG_DEMO_TOKENS: "tok_acme=acme,tok_globex=globex,tok_multi=acme|globex"
+      # Flip to true to see the provenance footer (dev only).
+      QG_INCLUDE_PROVENANCE: "false"
+    volumes:
+      - dbt_target:/dbt/target:ro
+    ports:
+      - "8765:8765"
+
+  # --- Optional services, opt in with: docker compose --profile full up ---
+
+  # Real OIDC provider. Start it to exercise QG_AUTH_PROVIDER=oidc instead of
+  # the static demo tokens. The realm is imported on boot.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    profiles: ["full"]
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    volumes:
+      - ./deploy/keycloak:/opt/keycloak/data/import:ro
+    ports:
+      - "8080:8080"
+
+  # Shared vector store for hybrid search at scale.
+  qdrant:
+    image: qdrant/qdrant:latest
+    profiles: ["full"]
+    ports:
+      - "6333:6333"
+
+volumes:
+  dbt_target:

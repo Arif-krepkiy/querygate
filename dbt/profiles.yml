@@ -1,0 +1,14 @@
+# dbt connects to the same Postgres the MCP server reads. Env vars are set by
+# docker-compose; the defaults match the local compose stack.
+querygate:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('QG_PG_HOST', 'localhost') }}"
+      port: "{{ env_var('QG_PG_PORT', '5432') | int }}"
+      user: "{{ env_var('QG_PG_USER', 'querygate') }}"
+      password: "{{ env_var('QG_PG_PASSWORD', 'querygate') }}"
+      dbname: "{{ env_var('QG_PG_DBNAME', 'warehouse') }}"
+      schema: analytics
+      threads: 4

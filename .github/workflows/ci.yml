@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --extra s3 --extra redis --extra duckdb --extra oidc --extra otel
+      - name: Ruff lint
+        run: uv run ruff check src tests evals scripts
+      - name: Ruff format check
+        run: uv run ruff format --check src tests evals scripts
+
+  # `git clone && uv sync && pytest` with no extras, so a test that quietly
+  # depends on an optional dependency fails here rather than for a visitor.
+  bare-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Tests with no extras installed
+        run: uv run pytest -q
+
+  test:
+    runs-on: ubuntu-latest
+    # Real Postgres, so the integration tests run rather than skip.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: querygate
+          POSTGRES_PASSWORD: querygate
+          POSTGRES_DB: warehouse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U querygate -d warehouse"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      # Real Redis, so the rate limiter's Lua script actually runs.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      QG_TEST_PG_DSN: postgresql://querygate:querygate@localhost:5432/warehouse
+      QG_TEST_REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --extra s3 --extra redis --extra duckdb --extra oidc --extra otel
+
+      - name: Load seeds + build marts
+        env:
+          PGPASSWORD: querygate
+        run: |
+          psql -h localhost -U querygate -d warehouse -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE TABLE raw_tenants(tenant_id text, tenant_name text, industry text);
+          CREATE TABLE raw_plans(plan_id int, plan_name text, monthly_price numeric, tier text);
+          CREATE TABLE raw_customers(customer_id int, tenant_id text, customer_name text, plan_id int, signed_up_at text, region text);
+          CREATE TABLE raw_orders(order_id int, tenant_id text, customer_id int, order_date text, amount numeric, status text);
+          SQL
+          for t in raw_tenants raw_plans raw_customers raw_orders; do
+            psql -h localhost -U querygate -d warehouse -c "\copy $t FROM 'dbt/seeds/$t.csv' WITH (FORMAT csv, HEADER true)"
+          done
+          psql -h localhost -U querygate -d warehouse -v ON_ERROR_STOP=1 -f scripts/build_marts.sql
+
+      - name: Unit + integration tests
+        run: uv run pytest -q
+
+      - name: Retrieval hit@k eval
+        run: uv run python evals/eval_retrieval.py
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [lint, bare-install, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: false
+          tags: querygate:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,7 @@
+{
+  "revenue": ["sales", "income", "turnover", "money", "earnings", "made"],
+  "churn": ["attrition", "cancelled", "inactive", "lost", "leaving"],
+  "customer": ["client", "account", "user"],
+  "plan": ["subscription", "tier", "package"],
+  "order": ["purchase", "transaction", "sale"]
+}

@@ -1,0 +1,76 @@
+{
+  "realm": "querygate",
+  "enabled": true,
+  "accessTokenLifespan": 1800,
+  "clients": [
+    {
+      "clientId": "querygate",
+      "name": "QueryGate MCP server",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:8765/*", "http://127.0.0.1:*"],
+      "webOrigins": ["*"],
+      "protocolMappers": [
+        {
+          "name": "tenant-ids",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant_ids",
+            "claim.name": "tenant_ids",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "querygate",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "roles": {
+    "realm": [
+      { "name": "analyst", "description": "May query the warehouse" },
+      { "name": "admin", "description": "May also reload the catalog" }
+    ]
+  },
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@acme.example",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "alice", "temporary": false }],
+      "attributes": { "tenant_ids": ["acme"] },
+      "realmRoles": ["analyst"]
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "email": "bob@globex.example",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "bob", "temporary": false }],
+      "attributes": { "tenant_ids": ["globex"] },
+      "realmRoles": ["analyst"]
+    },
+    {
+      "username": "carol",
+      "enabled": true,
+      "email": "carol@example.com",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "carol", "temporary": false }],
+      "attributes": { "tenant_ids": ["acme", "globex"] },
+      "realmRoles": ["analyst", "admin"]
+    }
+  ]
+}

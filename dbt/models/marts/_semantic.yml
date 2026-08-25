@@ -1,0 +1,91 @@
+# dbt MetricFlow semantic layer. Human-owned definitions of what business
+# terms mean, so everyone (and the LLM) gets the same number. `dbt parse`
+# compiles these into target/semantic_manifest.json, which QueryGate ingests
+# and surfaces to the agent as authoritative metric definitions.
+
+models:
+  - name: metricflow_time_spine
+    time_spine:
+      standard_granularity_column: date_day
+    columns:
+      - name: date_day
+        granularity: day
+
+semantic_models:
+  - name: orders
+    model: ref('customer_orders')
+    defaults:
+      agg_time_dimension: order_date
+    entities:
+      - name: order
+        type: primary
+        expr: order_id
+      - name: customer
+        type: foreign
+        expr: customer_id
+    dimensions:
+      - name: order_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: region
+        type: categorical
+      - name: status
+        type: categorical
+      - name: plan_name
+        type: categorical
+    measures:
+      - name: order_amount
+        agg: sum
+        expr: amount
+      - name: order_count
+        agg: count
+        expr: order_id
+
+  - name: customers
+    model: ref('active_customers')
+    defaults:
+      agg_time_dimension: last_order_date
+    entities:
+      - name: customer
+        type: primary
+        expr: customer_id
+    dimensions:
+      - name: last_order_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: region
+        type: categorical
+      - name: plan_name
+        type: categorical
+    measures:
+      - name: distinct_customers
+        agg: count_distinct
+        expr: customer_id
+
+metrics:
+  - name: completed_revenue
+    label: Completed Revenue
+    description: Total USD from completed orders only. The canonical revenue number.
+    type: simple
+    type_params:
+      measure: order_amount
+    filter: "{{ Dimension('order__status') }} = 'completed'"
+
+  - name: total_orders
+    label: Total Orders
+    description: Count of all orders regardless of status.
+    type: simple
+    type_params:
+      measure: order_count
+
+  - name: active_customers
+    label: Active Customers
+    description: >
+      Distinct customers with an order in the last 90 days. "Active" means
+      is_active = true. Do not redefine it per query.
+    type: simple
+    type_params:
+      measure: distinct_customers
+    filter: "{{ Dimension('customer__is_active') }} = true"

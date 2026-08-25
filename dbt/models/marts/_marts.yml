@@ -1,0 +1,86 @@
+version: 2
+
+models:
+  - name: customer_orders
+    description: >
+      One row per order, enriched with customer, region, and subscription plan.
+      The grain is a single order. Governed: every row carries tenant_id.
+    columns:
+      - name: order_id
+        description: Unique order identifier.
+      - name: tenant_id
+        description: Owning tenant (row-security scope).
+      - name: customer_id
+        description: Customer who placed the order.
+      - name: customer_name
+        description: Customer display name. PII, masked unless the caller holds pii_reader.
+        meta:
+          mask: hash
+      - name: region
+        description: "Customer region: NA, EU, APAC."
+      - name: order_date
+        description: Date the order was placed.
+      - name: amount
+        description: Order value in USD.
+      - name: status
+        description: "Order status: completed, pending, refunded."
+      - name: plan_name
+        description: Subscription plan the customer is on.
+        tests:
+          - relationships:
+              to: ref('plan_catalog')
+              field: plan_name
+
+  - name: monthly_revenue
+    description: >
+      Revenue aggregated per tenant, month, and region. Only completed orders
+      count toward revenue. Governed by tenant_id.
+    columns:
+      - name: tenant_id
+        description: Owning tenant (row-security scope).
+      - name: month
+        description: First day of the calendar month.
+      - name: region
+        description: "Customer region: NA, EU, APAC."
+      - name: revenue
+        description: Sum of completed order amounts (USD).
+      - name: order_count
+        description: Number of completed orders.
+
+  - name: active_customers
+    description: >
+      One row per customer with recency and an active flag (an order in the
+      last 90 days). Use for retention and churn questions. Governed by tenant_id.
+    columns:
+      - name: tenant_id
+        description: Owning tenant (row-security scope).
+      - name: customer_id
+        description: Customer identifier.
+      - name: customer_name
+        description: Customer display name.
+      - name: region
+        description: "Customer region: NA, EU, APAC."
+      - name: plan_name
+        description: Current subscription plan.
+        tests:
+          - relationships:
+              to: ref('plan_catalog')
+              field: plan_name
+      - name: last_order_date
+        description: Most recent order date.
+      - name: is_active
+        description: True if the customer ordered in the last 90 days.
+
+  - name: plan_catalog
+    description: >
+      Public reference of subscription plans and pricing. Shared across all
+      tenants. Not row-secured (no tenant_id column).
+    columns:
+      - name: plan_id
+        description: Plan identifier.
+      - name: plan_name
+        description: "Plan display name: Free, Pro, Enterprise."
+      - name: monthly_price
+        description: List price per month in USD.
+      - name: tier
+        description: Plan tier ranking.

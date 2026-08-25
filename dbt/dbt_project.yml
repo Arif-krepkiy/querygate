@@ -1,0 +1,22 @@
+name: querygate_demo
+version: "1.0.0"
+config-version: 2
+profile: querygate
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+target-path: "target"
+
+models:
+  querygate_demo:
+    # Marts materialize in the profile schema (analytics). No custom +schema,
+    # so dbt does not append and produce `analytics_analytics`.
+    marts:
+      +materialized: table
+    staging:
+      # Ephemeral: staging is inlined into the marts, so it never creates a
+      # relation and never shows up in the served catalog.
+      +materialized: ephemeral
+
+# Seeds (raw_*) land in the profile schema too; they are resource_type "seed",
+# not "model", so they never enter the served catalog.

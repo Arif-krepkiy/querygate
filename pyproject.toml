@@ -1,0 +1,74 @@
+[project]
+name = "querygate"
+version = "0.1.0"
+description = "Governed text-to-SQL MCP server: the LLM writes the SQL, QueryGate validates, tenant-scopes, cost-checks, and executes it read-only."
+readme = "README.md"
+authors = [{ name = "Arif Ismailov" }]
+requires-python = ">=3.12"
+dependencies = [
+    "mcp[cli]>=1.10",
+    "sqlglot>=26.0",
+    "rank-bm25>=0.2.2",
+    "psycopg[binary]>=3.2",
+    "python-dotenv>=1.0",
+    "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+s3 = ["boto3>=1.34"]
+# Local ONNX embeddings. onnxruntime has no wheel for macOS < 14; search falls
+# back to BM25 there.
+embeddings = ["fastembed>=0.3", "numpy>=1.26"]
+# Shared vector store. Independent of `embeddings` so an API embedder plus
+# Qdrant needs no ONNX runtime.
+qdrant = ["qdrant-client>=1.7", "numpy>=1.26"]
+redis = ["redis>=5.0"]
+duckdb = [
+    "duckdb>=1.5.5",
+]
+oidc = [
+    "httpx>=0.28.1",
+    "pyjwt[crypto]>=2.8",
+]
+otel = [
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "prometheus-client>=0.20",
+]
+
+[project.scripts]
+querygate = "querygate:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/querygate"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S", "N", "RUF"]
+ignore = ["S101", "UP047"]  # asserts fine in tests; ParamSpec decorator reads clearer than PEP 695 here
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "N801", "E501"]
+"scripts/**" = ["S311"]  # demo seed generation, not cryptographic
+"examples/**" = ["T201", "S608"]  # examples print, and show SQL literally
+"evals/**" = ["E402"]     # sys.path shim before imports
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--import-mode=importlib"
+markers = ["integration: tests that need a real Postgres warehouse (QG_TEST_PG_DSN)"]

@@ -1,0 +1,4 @@
+plan_id,plan_name,monthly_price,tier
+1,Free,0,t0
+2,Pro,49,t1
+3,Enterprise,299,t2
