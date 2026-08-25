@@ -10,6 +10,7 @@ venv/
 # Local extras
 querygate-*.tar.gz
 .cursor/
+docker-compose.override.yml
 
 # Env
 .env
