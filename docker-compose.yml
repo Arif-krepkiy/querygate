@@ -23,6 +23,9 @@ services:
   # catalog) into the shared volume the server compiles its catalog from.
   dbt:
     image: ghcr.io/dbt-labs/dbt-postgres:1.8.latest
+    # dbt-labs publishes amd64 only, for every tag. Without this the pull fails
+    # outright on Apple Silicon instead of falling back to emulation.
+    platform: linux/amd64
     depends_on:
       postgres:
         condition: service_healthy
