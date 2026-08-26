@@ -232,6 +232,20 @@ of what the agent asked.*
 
 ## Migration checklist for a role-and-view Snowflake shop
 
+[`scripts/snowflake_roles.py`](../scripts/snowflake_roles.py) generates steps 1
+and 2 from the same `QG_WAREHOUSE_ROLE_MAP` the server reads, so the grants and
+the mapping cannot drift. It prints the SQL and stops; `--apply` pipes it to the
+Snowflake CLI, `--verify` emits the read-only checks instead. It refuses outright
+if the map names a role no grant covers, which is the mistake that otherwise
+surfaces as a caller being refused in production for no visible reason.
+
+```bash
+export QG_WAREHOUSE_ROLE_MAP='analyst=QG_ANALYST,finance=QG_FINANCE'
+python scripts/snowflake_roles.py --service-user QUERYGATE_SVC --warehouse QG_WH \
+    --grant QG_ANALYST=ANALYTICS.SHARED --grant QG_FINANCE=ANALYTICS.FINANCE
+```
+
+
 1. Create one Snowflake role per audience if they do not already exist, granted
    `SELECT` on that audience's views only.
 2. Grant every mapped role to the QueryGate service user (`GRANT ROLE … TO USER …`).
