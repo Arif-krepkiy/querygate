@@ -120,7 +120,7 @@ class OIDCVerifier(TokenVerifier):
                 },
             )
         except Exception as exc:
-            # Deliberately coarse: the caller learns "invalid token" and the
+            # Coarse on purpose: the caller learns "invalid token" and the
             # detail stays in our logs. Telling a client *why* a token failed
             # helps an attacker more than it helps a legitimate user.
             _log.info("token rejected: %s: %s", type(exc).__name__, exc)

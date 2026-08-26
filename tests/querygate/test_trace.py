@@ -13,7 +13,7 @@ SCOPES = frozenset({"acme"})
 
 class TestTraceMatchesReality:
     def test_final_stage_is_what_actually_executes(self, catalog):
-        """The whole point: a trace shows the real pipeline, not a retelling."""
+        """A trace shows the real pipeline, not a retelling of it."""
         sql = "SELECT region, sum(amount) FROM customer_orders GROUP BY region"
         stages, prepared, error = trace_query(sql, catalog, SCOPES)
         assert error is None

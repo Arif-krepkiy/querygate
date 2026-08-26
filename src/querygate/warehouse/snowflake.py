@@ -26,19 +26,17 @@ _SAFE_ROLE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
 
 
 def _pin_role(conn: SnowflakeConnection, role: str) -> None:
-    """Pin the session to exactly one role, then prove it took effect.
+    """Pin the session to one role and check it took effect.
 
-    Two things make this more than ``USE ROLE``:
+    ``USE ROLE`` on its own is not enough. This design needs the service user to
+    hold every mapped role, and a user whose ``DEFAULT_SECONDARY_ROLES`` is
+    ``ALL`` activates all of them whatever the primary role is, so the caller
+    reads every audience's views while the connection looks correctly scoped.
+    ``USE SECONDARY ROLES NONE`` is what narrows the session; the ``USE ROLE``
+    after it only picks which one is left.
 
-    * **Secondary roles are disabled first.** The service user must be granted every
-      mapped role for this design to work at all, and if its
-      ``DEFAULT_SECONDARY_ROLES`` is ``ALL`` (common), the session activates all of
-      them regardless of the primary role. The caller would then read every
-      audience's views while the connection *looks* correctly scoped: wrong rows,
-      no error. ``USE SECONDARY ROLES NONE`` is what actually narrows it.
-    * **The result is verified, not assumed.** ``CURRENT_ROLE()`` is read back
-      and compared, so a silent fallback to a default role fails closed here
-      rather than answering as somebody else.
+    ``CURRENT_ROLE()`` is then read back and compared, so a fallback to some
+    default role is caught here rather than answering as somebody else.
     """
     if not _SAFE_ROLE.match(role):
         # Operator-supplied, never user input, but an identifier reaching SQL

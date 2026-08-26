@@ -149,7 +149,7 @@ class TestProfiling:
         assert "min" not in by_column["region"]  # min/max on text is noise
 
     def test_profile_is_tenant_scoped(self, catalog):
-        """The whole point: a profile must describe only rows the caller may see.
+        """A profile must describe only rows the caller may see.
         globex's 300.0 order must not widen acme's maximum."""
         acme = self._profile(catalog, ["amount"], scopes={"acme"})
         assert acme["row_count"] == 4
