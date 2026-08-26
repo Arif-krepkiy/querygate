@@ -182,6 +182,102 @@ SHOW PARAMETERS LIKE 'DEFAULT_SECONDARY_ROLES' FOR USER QUERYGATE_SVC;
   yours are, that is an argument for per-role catalog filtering rather than a
   reason to avoid this mode.
 
+## Sourcing the map from Snowflake instead of config
+
+`QG_WAREHOUSE_ROLE_MAP` duplicates something the warehouse already knows. The
+grants exist in Snowflake, the roles exist in Snowflake, and a team that runs
+this properly already keeps that model in one place. Restating it in an env var
+gives you two sources of truth and one of them will rot.
+
+Worth doing. The rest of this section is what it takes to do it without moving
+the failure mode somewhere worse.
+
+### What the join key would be
+
+The gap is that Snowflake knows its own roles but not which IdP role each one
+answers to. Four ways to close it, roughly in order of how much they cost:
+
+**Naming convention.** IdP `finance` maps to Snowflake `QG_FINANCE` by prefix.
+Zero configuration. Also completely implicit, so renaming an IdP group silently
+unmaps an audience, and there is no place to look up what the convention was.
+Fine for a small shop, bad the moment someone new joins.
+
+**SCIM provisioning.** If the IdP already provisions Snowflake through SCIM, the
+role names *are* the group names and the map is the identity function. Nothing
+to store, because the mapping is a consequence of how the roles got created. Any
+shop already doing this should probably start here, and this is the case where
+the whole feature is just "stop configuring what SCIM already decided".
+
+**Role comments.** `COMMENT = 'idp_role=finance'` on the role. Readable with
+`SHOW ROLES`, survives renames of everything except the comment itself. Cheap and
+explicit, though a comment is a string field with no schema and nothing stops a
+typo.
+
+**Object tags.** `ALTER ROLE QG_FINANCE SET TAG governance.idp_role = 'finance'`.
+The Snowflake-native answer, queryable and governable in its own right. Also
+Enterprise-tier, which decides it for a lot of teams.
+
+### The freshness trap
+
+This is the part that would bite, and it is specific enough to be worth writing
+down before anybody starts.
+
+Snowflake exposes this information twice, and the convenient copy is the wrong
+one. `SNOWFLAKE.ACCOUNT_USAGE.ROLES`, `GRANTS_TO_USERS` and `TAG_REFERENCES` are
+the queryable, joinable, pleasant views, and they lag behind reality by up to a
+couple of hours. Using them for an authorization decision means an offboarded
+analyst keeps their access until the view catches up, and a newly granted role
+does not work for reasons nobody can see. The real-time answers come from `SHOW
+ROLES` and `SHOW GRANTS TO USER`, which return result sets rather than tables and
+are more awkward to consume.
+
+Use the `SHOW` commands. Verify the latency of anything in `ACCOUNT_USAGE` on
+your own account before trusting it with an access decision; the documented
+figures vary by view and have changed over time.
+
+### Where the trust boundary moves
+
+The current design says the map is an operator allowlist rather than a token
+claim, because a claim is attacker-influenced input. Sourcing the map from
+Snowflake does not break that argument, but it does change who has to be trusted:
+whoever can set a role comment or tag can now change who reads what.
+
+That is very likely fine. Those same people already control the grants, which is
+strictly more power than controlling the mapping. It is worth stating explicitly
+rather than discovering during a review, and it does mean the tag or comment
+should be owned by the same role that owns the grants, not by anyone who happens
+to hold `OWNERSHIP` on a role.
+
+### Availability, which is the real cost
+
+An env var cannot be unreachable. A discovered map can, and the failure is total:
+no map means no identity resolution means every query is refused. That turns a
+Snowflake blip into a full outage of the server.
+
+The pattern already exists in this codebase, in `catalog/sync.py`: load on a TTL,
+keep serving the last-known-good copy when a refresh fails, never crash the
+serving path on a sync error. A discovered role map should work the same way,
+with one difference that matters. The catalog degrades safely when stale, because
+an out-of-date description is a cosmetic problem. A stale role map is an access
+control decision, so it needs a hard ceiling on staleness after which the server
+refuses rather than guesses. Fail-closed on stale, not last-known-good forever.
+
+### Shape it would take
+
+```
+QG_WAREHOUSE_ROLE_SOURCE=config | snowflake_tag | snowflake_comment
+QG_WAREHOUSE_ROLE_TAG=governance.idp_role     # for the tag variant
+QG_WAREHOUSE_ROLE_MAX_STALENESS_SECONDS=900   # refuse rather than use an older map
+```
+
+`config` stays the default. The discovered variants resolve at startup, so a
+deployment that cannot read its own role model fails to boot rather than failing
+per request, which is the same choice `validate_configuration` already makes.
+
+`scripts/snowflake_roles.py` would then invert: instead of reading the env var
+and emitting grants, it would emit the grants *and* the tag or comment that makes
+them discoverable, which keeps provisioning and discovery in one command.
+
 ## What is still missing
 
 **1. Catalog filtering by role.** Retrieval currently offers every model in the
