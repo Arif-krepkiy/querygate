@@ -216,6 +216,40 @@ performs no I/O at all. See
 [`test_governance.py`](tests/querygate/test_governance.py) for the matrix:
 aliases, joins, subqueries, CTE shadowing, and the adversarial asserts.
 
+### Or let the warehouse do it
+
+Some warehouses were never modelled multi-tenant, so there is no tenant column
+to filter on, and often exactly one technical user besides. Point a predicate
+injector at that and nothing is governed: every caller runs as the same identity
+and receives the union of what it can read, with no error anywhere. So there is
+a second mode where the engine's own grants enforce instead, and the query runs
+as the caller's own warehouse role.
+
+```mermaid
+flowchart LR
+    subgraph inject["QG_GOVERNANCE_MODE=inject"]
+        direction TB
+        A1[Agent writes SQL] --> B1[QueryGate injects<br/>tenant predicate]
+        B1 --> C1[Independent re-parse<br/>proves it is there]
+        C1 --> D1[(Warehouse)]
+        D1 -.->|one service identity,<br/>rows already filtered| E1[Caller's rows]
+    end
+
+    subgraph wh["QG_GOVERNANCE_MODE=warehouse"]
+        direction TB
+        A2[Agent writes SQL] --> B2[QueryGate resolves<br/>caller to ONE role]
+        B2 --> C2[Session opens<br/>under that role]
+        C2 --> D2[(Warehouse)]
+        D2 -.->|engine's own grants<br/>decide the rows| E2[Caller's rows]
+    end
+```
+
+Alternatives, not layers. The left column needs a tenant column on every
+governed model; the right needs a warehouse role per audience. Details, and the
+Snowflake `DEFAULT_SECONDARY_ROLES` trap that silently undoes the right-hand
+column, are in
+[warehouse-enforced governance](docs/warehouse-enforced-governance.md).
+
 ## Is this right for your warehouse?
 
 | You have | Verdict |

@@ -50,6 +50,30 @@ which is the worst failure mode a data-access layer can have.
   explicit allowlist, *not* the token's role claim passed through: a claim is
   attacker-influenced input, and forwarding it verbatim would let a loose IdP
   configuration name any role in the warehouse.
+
+```mermaid
+flowchart LR
+    KC["Keycloak / OIDC"] -->|"JWT"| T
+
+    subgraph T["Token claims"]
+        direction TB
+        R["realm_access.roles<br/><b>analyst</b>"]
+        TN["tenant_ids<br/><b>acme</b>"]
+    end
+
+    R --> MAP{"QG_WAREHOUSE_ROLE_MAP<br/>operator config"}
+    MAP -->|"analyst maps to QG_ANALYST"| ROLE["Warehouse role<br/><b>QG_ANALYST</b>"]
+    MAP -->|"unmapped, none,<br/>or several"| REF["REFUSED"]
+
+    TN -.->|"used in inject mode only"| PRED["Tenant predicate"]
+    ROLE --> SF[("Snowflake<br/>session")]
+
+    style MAP fill:#fff4e6,stroke:#c98a3a,stroke-width:2px
+    style REF fill:#ffe0e0,stroke:#c0392b
+```
+
+The token's roles are lookup keys, never values. A forged claim of `QG_FINANCE`
+matches no key and is refused.
 - **Fail-fast at startup** (`validate_configuration`, called from `main`):
   `warehouse` mode without a role map refuses to boot. A deployment that would
   serve everyone as one identity must never accept traffic.
@@ -74,6 +98,25 @@ connect with. `role=QG_ANALYST` then narrows nothing: the caller reads every
 audience's views, the connection looks correctly scoped, and nothing errors.
 Wrong rows, no error: the same failure this mode exists to prevent, reappearing
 one layer down.
+
+```mermaid
+flowchart TB
+    START["Service user connects<br/>role=QG_ANALYST"]
+    START --> CHECK{"DEFAULT_SECONDARY_ROLES<br/>on the user?"}
+
+    CHECK -->|"('ALL'), the default<br/>for several creation paths"| BAD1["Session activates<br/>EVERY granted role"]
+    BAD1 --> BAD2["USE ROLE narrows nothing"]
+    BAD2 --> BAD3["Reads every audience's views"]
+    BAD3 --> BAD4["Connection looks correct<br/>Logs look correct<br/>No error anywhere"]
+
+    CHECK -->|"( ), set explicitly"| OK1["Only the primary role<br/>is active"]
+    OK1 --> OK2["USE ROLE QG_ANALYST"]
+    OK2 --> OK3["SELECT CURRENT_ROLE()<br/>read back and compared"]
+    OK3 --> OK4["Wrong role, refuse<br/>Right role, execute"]
+
+    style BAD4 fill:#ffe0e0,stroke:#c0392b,stroke-width:2px
+    style OK4 fill:#e0f5e0,stroke:#27795b,stroke-width:2px
+```
 
 `_pin_role` therefore does three things in order, before any query runs:
 
@@ -171,7 +214,7 @@ SHOW PARAMETERS LIKE 'DEFAULT_SECONDARY_ROLES' FOR USER QUERYGATE_SVC;
 
 - Whether an analyst may hold two mapped roles. QueryGate refuses ambiguity
   today, which is safe but means "finance analyst who also covers ops" needs a
-  third role granting both, created deliberately, rather than resolving to a
+  third role granting both, created on purpose, rather than resolving to a
   silent union.
 - Whether the catalog should hide models a role cannot read. Currently it does
   not, so the agent will happily write valid SQL against a view it will then be
