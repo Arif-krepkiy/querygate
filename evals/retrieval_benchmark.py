@@ -2,8 +2,12 @@
 
 The bundled sample catalog has four models, which is too few to tell any two
 retrieval configurations apart: everything reaches the ceiling at once. This
-builds forty instead, across eight domains, and asks thirty-two questions in
+builds forty instead, across ten domains, and asks thirty-two questions in
 business language against descriptions written in schema language.
+
+They are fixtures, not a second dbt project. Retrieval reads catalog metadata
+and nothing else, so names, domains, descriptions and column names are the whole
+of what it needs, and they live below as literals.
 
 Method, stated so the numbers can be discounted properly:
 
