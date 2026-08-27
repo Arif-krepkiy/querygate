@@ -92,9 +92,10 @@ matches no key and is refused.
 
 This design requires the service user to be granted **every** mapped role. That
 makes a Snowflake default dangerous: when the user's `DEFAULT_SECONDARY_ROLES`
-is `('ALL')`, which is common and the default for users created through some flows,
-the session activates *all* granted roles no matter which primary role you
-connect with. `role=QG_ANALYST` then narrows nothing: the caller reads every
+is `('ALL')`, the session activates *all* granted roles no matter which primary
+role you connect with. And `[ALL]` is the system default, which `DESC USER`
+reports in its own `default` column, so a user created without the property set
+explicitly has it. `role=QG_ANALYST` then narrows nothing: the caller reads every
 audience's views, the connection looks correctly scoped, and nothing errors.
 Wrong rows, no error: the same failure this mode exists to prevent, reappearing
 one layer down.
@@ -104,7 +105,7 @@ flowchart TB
     START["Service user connects<br/>role=QG_ANALYST"]
     START --> CHECK{"DEFAULT_SECONDARY_ROLES<br/>on the user?"}
 
-    CHECK -->|"('ALL'), the default<br/>for several creation paths"| BAD1["Session activates<br/>EVERY granted role"]
+    CHECK -->|"('ALL'), the system default<br/>unless set explicitly"| BAD1["Session activates<br/>EVERY granted role"]
     BAD1 --> BAD2["USE ROLE narrows nothing"]
     BAD2 --> BAD3["Reads every audience's views"]
     BAD3 --> BAD4["Connection looks correct<br/>Logs look correct<br/>No error anywhere"]
@@ -135,8 +136,16 @@ Verify on a real account before trusting it:
 -- as the service user, after QueryGate connects with role=QG_ANALYST
 SELECT CURRENT_ROLE(), CURRENT_SECONDARY_ROLES();
 -- expect: QG_ANALYST, and no secondary roles
-SHOW PARAMETERS LIKE 'DEFAULT_SECONDARY_ROLES' FOR USER QUERYGATE_SVC;
+
+-- and separately, as an admin: DEFAULT_SECONDARY_ROLES is a user *property*,
+-- not a session parameter, so SHOW PARAMETERS will not find it.
+DESC USER QUERYGATE_SVC;   -- look for the DEFAULT_SECONDARY_ROLES row
 ```
+
+Reading another user's properties needs `MONITOR` on that user, or a role like
+`USERADMIN`. An analyst checking a service account will get a privilege error,
+which is correct: the person who can answer this question is the person who
+created the account.
 
 ## The one-service-user problem
 
@@ -207,7 +216,7 @@ result rather than trusting `USE ROLE`.
 Check it before anything else:
 
 ```sql
-SHOW PARAMETERS LIKE 'DEFAULT_SECONDARY_ROLES' FOR USER QUERYGATE_SVC;
+DESC USER QUERYGATE_SVC;   -- the DEFAULT_SECONDARY_ROLES row, not SHOW PARAMETERS
 ```
 
 ### What still has to be decided per deployment

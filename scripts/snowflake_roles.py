@@ -90,7 +90,9 @@ def _statements(user: str, grants: dict[str, str], warehouse: str | None) -> lis
 def _verification(user: str, grants: dict[str, str]) -> list[str]:
     out = [
         "-- Read-only checks. Expect DEFAULT_SECONDARY_ROLES to be ().",
-        f"SHOW PARAMETERS LIKE 'DEFAULT_SECONDARY_ROLES' FOR USER {user};",
+        "-- It is a user property, not a session parameter, so DESC USER is the",
+        "-- command that reports it. Needs MONITOR on the user, or USERADMIN.",
+        f"DESC USER {user};",
         f"SHOW GRANTS TO USER {user};",
         "",
         "-- Per role: the session must report that role and no secondary roles.",
