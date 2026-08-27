@@ -429,15 +429,21 @@ def _score(index: CatalogIndex, k: int = 3) -> tuple[int, int]:
     return hit1, hitk
 
 
+HINT = "  (install them with: uv sync --extra embeddings)"
+
+
 def _embedder() -> object | None:
     try:
         from querygate.retrieval.embedder import FastEmbedEmbedder
     except ImportError:
+        print("Embeddings are not installed, so those rows are skipped.")
+        print(HINT)
         return None
     try:
         return FastEmbedEmbedder(config.EMBEDDING_MODEL)
     except Exception as exc:
-        print(f"embeddings unavailable, skipping those rows: {exc}")
+        print(f"Embeddings failed to load, so those rows are skipped: {exc}")
+        print(HINT)
         return None
 
 
