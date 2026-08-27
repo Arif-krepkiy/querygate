@@ -21,6 +21,9 @@ test-integration:  ## Spin up Postgres, load seeds+marts, run integration tests
 eval:  ## Offline retrieval hit@k over the golden question set
 	uv run python evals/eval_retrieval.py
 
+bench:  ## Retrieval matrix on a 40-model synthetic catalog (the article's table)
+	uv run python evals/retrieval_benchmark.py
+
 seeds:  ## Regenerate the deterministic demo seed CSVs
 	uv run python scripts/gen_seeds.py
 

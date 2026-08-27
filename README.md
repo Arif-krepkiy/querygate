@@ -695,6 +695,7 @@ uv sync                    # install (add --extra duckdb/redis/oidc/otel/qdrant 
 make test                  # unit tests, no infrastructure needed
 make test-integration      # spins up Postgres, builds marts, runs end-to-end
 make eval                  # retrieval hit@k over the golden question set
+make bench                 # retrieval matrix on a 40-model synthetic catalog
 make lint
 ```
 
@@ -710,6 +711,15 @@ questions with ground-truth answers computed from deterministic seeds.
 Retrieval quality (hit@k) is offline and CI-friendly; answer quality is checked
 by running an agent and comparing to recorded numbers. See
 [`evals/questions.json`](evals/questions.json).
+
+**`make bench`** is the one to run if you are deciding whether embeddings are
+worth the extra. The bundled sample catalog has four models, which is too few to
+separate any two configurations, so
+[`retrieval_benchmark.py`](evals/retrieval_benchmark.py) builds forty and asks 32
+business-language questions against schema-language descriptions. It compares
+BM25 alone, three differently-written glossaries and hybrid retrieval. The gap
+between the two honestly-written glossary rows turns out to be more interesting
+than which technique wins.
 
 **Kubernetes.** There is a chart in
 [`deploy/helm/querygate`](deploy/helm/querygate). It wires the configuration as
@@ -759,7 +769,7 @@ src/querygate/
 ├── warehouse/    # engine adapters behind one protocol
 └── results/      # columnar compaction + debug provenance
 dbt/              # demo multi-tenant warehouse (seeds, marts, semantic layer)
-evals/            # golden questions + retrieval harness
+evals/            # golden questions, retrieval harness, retrieval benchmark
 examples/         # isolation demo, agent loop, pipeline tracer (all runnable)
 ```
 
